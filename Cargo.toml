@@ -1,0 +1,16 @@
+[package]
+name = "videohash_indexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4.4"
+serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.4", features = ["v4", "serde"] }
+env_logger = "0.10"
+log = "0.4"
+mih-rs = "0.3.1"
+gcp-bigquery-client = "0.16"
+tokio = { version = "1", features = ["full"] }
+lazy_static = "1.4"
+dotenv = "0.15"
