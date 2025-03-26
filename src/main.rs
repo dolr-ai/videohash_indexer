@@ -4,7 +4,6 @@ use dotenv::dotenv;
 use env_logger::Env;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use uuid::Uuid;
 
 mod backup;
 mod index;
@@ -16,7 +15,7 @@ use videohash::VideoHash;
 
 #[derive(Serialize)]
 struct VideoMatch {
-    uuid: Uuid,
+    video_id: String,
     similarity_percentage: f64,
     is_duplicate: bool,
 }
@@ -36,7 +35,7 @@ struct ErrorResponse {
 
 #[derive(Deserialize)]
 struct SearchRequest {
-    uuid: Uuid,
+    video_id: String,
     hash: String,
 }
 
@@ -56,7 +55,7 @@ async fn search(
     };
 
     // Always backup to BigQuery
-    let backed_up = match backup::backup_hash(&req.uuid, &query_hash).await {
+    let backed_up = match backup::backup_hash(&req.video_id, &query_hash).await {
         Ok(result) => result,
         Err(e) => {
             log::error!("Failed to backup hash to BigQuery: {}", e);
@@ -74,13 +73,13 @@ async fn search(
     };
 
     if !similar_hashes.is_empty() {
-        let (uuid, distance) = similar_hashes[0];
+        let (video_id, distance) = similar_hashes[0].clone();
         let similarity = 100.0 * (64.0 - distance as f64) / 64.0;
 
         let response = SearchResponse {
             match_found: true,
             match_details: Some(VideoMatch {
-                uuid,
+                video_id,
                 similarity_percentage: similarity,
                 is_duplicate: true,
             }),
@@ -90,7 +89,7 @@ async fn search(
 
         HttpResponse::Ok().json(response)
     } else {
-        match index.add(req.uuid, &query_hash) {
+        match index.add(req.video_id.clone(), &query_hash) {
             Ok(_) => {
                 let response = SearchResponse {
                     match_found: false,
@@ -109,15 +108,15 @@ async fn search(
 }
 
 async fn delete_hash(
-    path: web::Path<Uuid>,
+    path: web::Path<String>,
     index: web::Data<Arc<VideoHashIndex>>,
 ) -> impl Responder {
-    let uuid = path.into_inner();
+    let video_id = path.into_inner();
 
-    match index.remove(&uuid) {
+    match index.remove(&video_id) {
         Ok(true) => HttpResponse::Ok().json(()),
         Ok(false) => HttpResponse::NotFound().json(ErrorResponse {
-            error: format!("Hash with UUID {} not found", uuid),
+            error: format!("Hash with video_id {} not found", video_id),
         }),
         Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
             error: format!("Failed to remove hash: {}", e),
@@ -139,7 +138,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .app_data(web::Data::new(shared_index.clone()))
             .route("/search", web::post().to(search))
-            .route("/hash/{uuid}", web::delete().to(delete_hash))
+            .route("/hash/{video_id}", web::delete().to(delete_hash))
     })
     .bind("0.0.0.0:8080")?
     .run()

@@ -3,7 +3,6 @@ use std::error::Error;
 use std::sync::{Arc, RwLock};
 
 use mih_rs::Index;
-use uuid::Uuid;
 
 use super::videohash::VideoHash;
 
@@ -17,8 +16,8 @@ fn binary_string_to_u64(binary_str: &str) -> Result<u64, Box<dyn Error + Send + 
 }
 
 pub struct VideoHashIndex {
-    hashes: RwLock<HashMap<Uuid, u64>>,
-    index: RwLock<Option<(Index<u64>, Vec<Uuid>)>>, // Store UUIDs alongside the index
+    hashes: RwLock<HashMap<String, u64>>,
+    index: RwLock<Option<(Index<u64>, Vec<String>)>>, // Store video_ids alongside the index
 }
 
 impl VideoHashIndex {
@@ -29,11 +28,11 @@ impl VideoHashIndex {
         }
     }
 
-    pub fn add(&self, uuid: Uuid, hash: &VideoHash) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub fn add(&self, video_id: String, hash: &VideoHash) -> Result<(), Box<dyn Error + Send + Sync>> {
         let hash_value = binary_string_to_u64(&hash.hash)?;
 
         let mut hashes = self.hashes.write().unwrap();
-        hashes.insert(uuid, hash_value);
+        hashes.insert(video_id, hash_value);
 
         // Invalidate the index when the hash map changes
         let mut index = self.index.write().unwrap();
@@ -52,20 +51,20 @@ impl VideoHashIndex {
                 return Ok(());
             }
 
-            // Create ordered vectors of UUIDs and hash values to ensure consistent ordering
-            let mut uuid_hash_pairs: Vec<(Uuid, u64)> = hashes.iter()
-                .map(|(&uuid, &hash)| (uuid, hash))
+            // Create ordered vectors of video_ids and hash values to ensure consistent ordering
+            let mut video_id_hash_pairs: Vec<(String, u64)> = hashes.iter()
+                .map(|(video_id, &hash)| (video_id.clone(), hash))
                 .collect();
 
-            // Sort by UUID to ensure deterministic ordering
-            uuid_hash_pairs.sort_by_key(|(uuid, _)| *uuid);
+            // Sort by video_id to ensure deterministic ordering
+            video_id_hash_pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
 
             // Split into separate vectors
-            let uuids: Vec<Uuid> = uuid_hash_pairs.iter().map(|(uuid, _)| *uuid).collect();
-            let codes: Vec<u64> = uuid_hash_pairs.iter().map(|(_, code)| *code).collect();
+            let video_ids: Vec<String> = video_id_hash_pairs.iter().map(|(id, _)| id.clone()).collect();
+            let codes: Vec<u64> = video_id_hash_pairs.iter().map(|(_, code)| *code).collect();
 
             // Create the index with the ordered hash values
-            *index_lock = Some((Index::new(codes)?, uuids));
+            *index_lock = Some((Index::new(codes)?, video_ids));
         }
 
         Ok(())
@@ -74,7 +73,7 @@ impl VideoHashIndex {
     pub fn find_nearest_neighbor(
         &self,
         hash: &VideoHash,
-    ) -> Result<Option<(Uuid, u32)>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Option<(String, u32)>, Box<dyn Error + Send + Sync>> {
         let hash_value = binary_string_to_u64(&hash.hash)?;
 
         self.ensure_index_built()?;
@@ -84,7 +83,7 @@ impl VideoHashIndex {
             return Ok(None);
         }
 
-        let (index, uuids) = index_lock.as_ref().unwrap();
+        let (index, video_ids) = index_lock.as_ref().unwrap();
         
         let mut searcher = index.topk_searcher();
         let answers = searcher.run(hash_value, 1);
@@ -94,23 +93,23 @@ impl VideoHashIndex {
         }
 
         let idx = answers[0] as usize;
-        if idx >= uuids.len() {
+        if idx >= video_ids.len() {
             return Err("Index inconsistency: invalid vector index".into());
         }
 
-        let uuid = uuids[idx];
+        let video_id = video_ids[idx].clone();
         let hashes = self.hashes.read().unwrap();
-        let stored_hash = *hashes.get(&uuid).unwrap();
+        let stored_hash = *hashes.get(&video_id).unwrap();
         let hamming_dist = (hash_value ^ stored_hash).count_ones();
 
-        Ok(Some((uuid, hamming_dist)))
+        Ok(Some((video_id, hamming_dist)))
     }
 
     pub fn find_within_distance(
         &self,
         hash: &VideoHash,
         max_distance: u32,
-    ) -> Result<Vec<(Uuid, u32)>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Vec<(String, u32)>, Box<dyn Error + Send + Sync>> {
         let hash_value = binary_string_to_u64(&hash.hash)?;
 
         self.ensure_index_built()?;
@@ -120,7 +119,7 @@ impl VideoHashIndex {
             return Ok(Vec::new());
         }
 
-        let (index, uuids) = index_lock.as_ref().unwrap();
+        let (index, video_ids) = index_lock.as_ref().unwrap();
         let hashes = self.hashes.read().unwrap();
 
         let mut searcher = index.range_searcher();
@@ -129,11 +128,11 @@ impl VideoHashIndex {
         let mut neighbors = Vec::new();
         for idx in answers {
             let idx_usize = *idx as usize;
-            if idx_usize < uuids.len() {
-                let uuid = uuids[idx_usize];
-                let stored_hash = *hashes.get(&uuid).unwrap();
+            if idx_usize < video_ids.len() {
+                let video_id = video_ids[idx_usize].clone();
+                let stored_hash = *hashes.get(&video_id).unwrap();
                 let hamming_dist = (hash_value ^ stored_hash).count_ones();
-                neighbors.push((uuid, hamming_dist));
+                neighbors.push((video_id, hamming_dist));
             }
         }
 
@@ -142,9 +141,9 @@ impl VideoHashIndex {
         Ok(neighbors)
     }
 
-    pub fn remove(&self, uuid: &Uuid) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    pub fn remove(&self, video_id: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
         let mut hashes = self.hashes.write().unwrap();
-        let removed = hashes.remove(uuid).is_some();
+        let removed = hashes.remove(video_id).is_some();
 
         if removed {
             let mut index = self.index.write().unwrap();
@@ -161,8 +160,6 @@ impl VideoHashIndex {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    // Remove unnecessary methods
 }
 
 pub fn create_shared_index() -> Arc<VideoHashIndex> {
@@ -200,18 +197,18 @@ mod tests {
             hash: "0".repeat(32) + &"1".repeat(32),
         };
 
-        let uuid1 = Uuid::new_v4();
-        let uuid2 = Uuid::new_v4();
-        let uuid3 = Uuid::new_v4();
+        let video_id1 = "video-001".to_string();
+        let video_id2 = "video-002".to_string();
+        let video_id3 = "video-003".to_string();
 
-        index.add(uuid1, &hash1)?;
-        index.add(uuid2, &hash2)?;
-        index.add(uuid3, &hash3)?;
+        index.add(video_id1.clone(), &hash1)?;
+        index.add(video_id2.clone(), &hash2)?;
+        index.add(video_id3.clone(), &hash3)?;
 
         let result = index.find_nearest_neighbor(&hash1)?;
         assert!(result.is_some());
-        let (found_uuid, distance) = result.unwrap();
-        assert_eq!(found_uuid, uuid1);
+        let (found_id, distance) = result.unwrap();
+        assert_eq!(found_id, video_id1);
         assert_eq!(distance, 0);
 
         let query = VideoHash {
@@ -219,8 +216,8 @@ mod tests {
         };
         let result = index.find_nearest_neighbor(&query)?;
         assert!(result.is_some());
-        let (found_uuid, distance) = result.unwrap();
-        assert_eq!(found_uuid, uuid1);
+        let (found_id, distance) = result.unwrap();
+        assert_eq!(found_id, video_id1);
         assert_eq!(distance, 4);
 
         Ok(())
@@ -231,31 +228,31 @@ mod tests {
         let index = VideoHashIndex::new();
 
         // Add hashes in random order
-        let uuid1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
-        let uuid2 = Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap();
-        let uuid3 = Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap();
+        let video_id1 = "video-001".to_string();
+        let video_id2 = "video-002".to_string();
+        let video_id3 = "video-003".to_string();
         
         let hash1 = VideoHash { hash: "0".repeat(64) };
         let hash2 = VideoHash { hash: "1".repeat(64) };
         let hash3 = VideoHash { hash: "0".repeat(32) + &"1".repeat(32) };
 
         // Add in non-sequential order
-        index.add(uuid2, &hash2)?;
-        index.add(uuid3, &hash3)?;
-        index.add(uuid1, &hash1)?;
+        index.add(video_id2.clone(), &hash2)?;
+        index.add(video_id3.clone(), &hash3)?;
+        index.add(video_id1.clone(), &hash1)?;
 
-        // Test if UUIDs are mapped correctly
+        // Test if video_ids are mapped correctly
         let result = index.find_nearest_neighbor(&hash1)?;
         assert!(result.is_some());
-        let (found_uuid, distance) = result.unwrap();
-        assert_eq!(found_uuid, uuid1);
+        let (found_id, distance) = result.unwrap();
+        assert_eq!(found_id, video_id1);
         assert_eq!(distance, 0);
         
         // Test once more to ensure the order is consistent
         let result = index.find_nearest_neighbor(&hash1)?;
         assert!(result.is_some());
-        let (found_uuid, distance) = result.unwrap();
-        assert_eq!(found_uuid, uuid1);
+        let (found_id, distance) = result.unwrap();
+        assert_eq!(found_id, video_id1);
         assert_eq!(distance, 0);
 
         Ok(())
