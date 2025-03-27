@@ -1,47 +1,42 @@
-use actix_web::middleware::Logger;
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use dotenv::dotenv;
-use env_logger::Env;
+pub mod index;
+pub mod videohash;
+
+pub use index::{create_shared_index, VideoHashIndex};
+pub use videohash::VideoHash;
+
+use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use serde_json;
-
-mod index;
-mod videohash;
-
-use index::create_shared_index;
-use index::VideoHashIndex;
-use videohash::VideoHash;
 
 #[derive(Serialize)]
-struct VideoMatch {
-    video_id: String,
-    similarity_percentage: f64,
-    is_duplicate: bool,
+pub struct VideoMatch {
+    pub video_id: String,
+    pub similarity_percentage: f64,
+    pub is_duplicate: bool,
 }
 
 #[derive(Serialize)]
-struct SearchResponse {
-    match_found: bool,
-    match_details: Option<VideoMatch>,
-    hash_added: bool,
+pub struct SearchResponse {
+    pub match_found: bool,
+    pub match_details: Option<VideoMatch>,
+    pub hash_added: bool,
 }
 
 #[derive(Serialize)]
-struct ErrorResponse {
-    error: String,
+pub struct ErrorResponse {
+    pub error: String,
 }
 
-#[derive(Deserialize)]
-struct SearchRequest {
-    video_id: String,
-    hash: String,
+#[derive(Deserialize, Serialize)]
+pub struct SearchRequest {
+    pub video_id: String,
+    pub hash: String,
 }
 
-async fn search(
+pub async fn search(
     req: web::Json<SearchRequest>,
     index: web::Data<Arc<VideoHashIndex>>,
-) -> impl Responder {
+) -> HttpResponse {
     const MAX_HAMMING_DISTANCE: u32 = 10;
 
     let query_hash = match VideoHash::from_binary_string(&req.hash) {
@@ -95,10 +90,10 @@ async fn search(
     }
 }
 
-async fn delete_hash(
+pub async fn delete_hash(
     path: web::Path<String>,
     index: web::Data<Arc<VideoHashIndex>>,
-) -> impl Responder {
+) -> HttpResponse {
     let video_id = path.into_inner();
 
     match index.remove(&video_id) {
@@ -113,23 +108,4 @@ async fn delete_hash(
             error: format!("Failed to remove hash: {}", e),
         }),
     }
-}
-
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    env_logger::init_from_env(Env::default().default_filter_or("info"));
-    let shared_index = create_shared_index();
-
-    println!("Starting videohash indexer service on http://0.0.0.0:8080");
-
-    HttpServer::new(move || {
-        App::new()
-            .wrap(Logger::default())
-            .app_data(web::Data::new(shared_index.clone()))
-            .route("/search", web::post().to(search))
-            .route("/hash/{video_id}", web::delete().to(delete_hash))
-    })
-    .bind("0.0.0.0:8080")?
-    .run()
-    .await
 }

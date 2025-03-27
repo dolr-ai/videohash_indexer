@@ -11,8 +11,18 @@ fn binary_string_to_u64(binary_str: &str) -> Result<u64, Box<dyn Error + Send + 
         return Err(format!("Binary string must be 64 bits, got {}", binary_str.len()).into());
     }
     
-    u64::from_str_radix(binary_str, 2)
-        .map_err(|e| format!("Invalid binary string: {}", e).into())
+    // Validate that the string only contains '0' and '1'
+    if !binary_str.chars().all(|c| c == '0' || c == '1') {
+        return Err("Binary string must contain only '0' and '1'".into());
+    }
+    
+    // Parse the binary string in chunks to avoid overflow
+    let mut result: u64 = 0;
+    for c in binary_str.chars() {
+        result = (result << 1) | (c as u64 - '0' as u64);
+    }
+    
+    Ok(result)
 }
 
 pub struct VideoHashIndex {
@@ -55,16 +65,21 @@ impl VideoHashIndex {
             let mut video_id_hash_pairs: Vec<(String, u64)> = hashes.iter()
                 .map(|(video_id, &hash)| (video_id.clone(), hash))
                 .collect();
-
-            // Sort by video_id to ensure deterministic ordering
-            video_id_hash_pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
-
+            
             // Split into separate vectors
             let video_ids: Vec<String> = video_id_hash_pairs.iter().map(|(id, _)| id.clone()).collect();
             let codes: Vec<u64> = video_id_hash_pairs.iter().map(|(_, code)| *code).collect();
 
-            // Create the index with the ordered hash values
-            *index_lock = Some((Index::new(codes)?, video_ids));
+            // Create the index with explicit number of blocks (8 for 64-bit hashes)
+            // This is more appropriate than Index::new() which might choose inappropriate parameters
+            match mih_rs::Index::with_blocks(codes, 8) {
+                Ok(new_index) => {
+                    *index_lock = Some((new_index, video_ids));
+                },
+                Err(e) => {
+                    return Err(format!("Failed to create MIH index: {}", e).into());
+                }
+            }
         }
 
         Ok(())

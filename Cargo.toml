@@ -3,6 +3,18 @@ name = "videohash_indexer"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "videohash_indexer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "videohash_indexer"
+path = "src/main.rs"
+
+[[example]]
+name = "test_client"
+path = "src/examples/test_client.rs"
+
 [dependencies]
 actix-web = "4.4"
 serde = { version = "1.0", features = ["derive"] }
@@ -13,3 +25,5 @@ gcp-bigquery-client = "0.16"
 tokio = { version = "1", features = ["full"] }
 lazy_static = "1.4"
 dotenv = "0.15"
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
