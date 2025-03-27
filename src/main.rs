@@ -124,12 +124,52 @@ async fn delete_hash(
     }
 }
 
+async fn health_check(index: web::Data<Arc<VideoHashIndex>>) -> impl Responder {
+    // Check if BigQuery connection is healthy
+    let bq_status = match backup::check_bigquery_health().await {
+        Ok(true) => "healthy",
+        _ => "unhealthy", 
+    };
+    
+    // Check if index is functioning
+    let index_count = index.len();
+    
+    let health_status = serde_json::json!({
+        "status": "ok",
+        "components": {
+            "index": {
+                "status": "healthy",
+                "count": index_count
+            },
+            "bigquery": {
+                "status": bq_status
+            }
+        },
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    });
+    
+    HttpResponse::Ok().json(health_status)
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
     let shared_index = create_shared_index();
+    
+    // Backup all existing entries when service starts
+    let entries = shared_index.get_all_entries();
+    let entry_count = entries.len();
+    if entry_count > 0 {
+        log::info!("Starting backup of {} existing entries on service startup", entry_count);
+        match backup::backup_all(entries).await {
+            Ok(_) => log::info!("Successfully backed up all {} existing entries", entry_count),
+            Err(e) => log::error!("Failed to backup existing entries: {}", e),
+        }
+    } else {
+        log::info!("No existing entries to back up on service startup");
+    }
 
     println!("Starting videohash indexer service on http://0.0.0.0:8080");
 
@@ -139,6 +179,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(shared_index.clone()))
             .route("/search", web::post().to(search))
             .route("/hash/{video_id}", web::delete().to(delete_hash))
+            .route("/health", web::get().to(health_check))
     })
     .bind("0.0.0.0:8080")?
     .run()

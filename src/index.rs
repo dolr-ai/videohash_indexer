@@ -4,10 +4,11 @@ use std::sync::{Arc, RwLock};
 
 use mih_rs::Index;
 
+use super::backup;
 use super::videohash::VideoHash;
 
 fn binary_string_to_u64(binary_str: &str) -> Result<u64, Box<dyn Error + Send + Sync>> {
-    if binary_str.len() != 64 {
+    if (binary_str.len() != 64) {
         return Err(format!("Binary string must be 64 bits, got {}", binary_str.len()).into());
     }
     
@@ -28,15 +29,38 @@ impl VideoHashIndex {
         }
     }
 
+    // Add a new method to get all video IDs and hashes
+    pub fn get_all_entries(&self) -> Vec<(String, VideoHash)> {
+        let hashes = self.hashes.read().unwrap();
+        hashes
+            .iter()
+            .map(|(video_id, &hash_value)| {
+                // Convert u64 hash value back to binary string
+                let binary_string = format!("{:064b}", hash_value);
+                let hash = VideoHash { hash: binary_string };
+                (video_id.clone(), hash)
+            })
+            .collect()
+    }
+
     pub fn add(&self, video_id: String, hash: &VideoHash) -> Result<(), Box<dyn Error + Send + Sync>> {
         let hash_value = binary_string_to_u64(&hash.hash)?;
 
         let mut hashes = self.hashes.write().unwrap();
-        hashes.insert(video_id, hash_value);
+        hashes.insert(video_id.clone(), hash_value);
 
         // Invalidate the index when the hash map changes
         let mut index = self.index.write().unwrap();
         *index = None;
+
+        // Trigger async backup in a separate task
+        // This doesn't block the current thread but ensures backup happens
+        tokio::spawn(async move {
+            match backup::backup_hash(&video_id, hash).await {
+                Ok(_) => log::info!("Successfully backed up hash for video_id {}", video_id),
+                Err(e) => log::error!("Failed to backup hash for video_id {}: {}", video_id, e),
+            }
+        });
 
         Ok(())
     }

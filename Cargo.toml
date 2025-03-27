@@ -13,3 +13,5 @@ gcp-bigquery-client = "0.16"
 tokio = { version = "1", features = ["full"] }
 lazy_static = "1.4"
 dotenv = "0.15"
+chrono = "0.4"
+off_chain_agent = { git = "https://github.com/yral-dapp/off-chain-agent" }
