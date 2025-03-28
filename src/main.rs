@@ -3,8 +3,8 @@ use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
 use env_logger::Env;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use serde_json;
+use std::sync::Arc;
 
 mod index;
 mod videohash;

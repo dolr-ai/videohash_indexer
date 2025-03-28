@@ -10,19 +10,8 @@ fn binary_string_to_u64(binary_str: &str) -> Result<u64, Box<dyn Error + Send + 
     if binary_str.len() != 64 {
         return Err(format!("Binary string must be 64 bits, got {}", binary_str.len()).into());
     }
-    
-    // Validate that the string only contains '0' and '1'
-    if !binary_str.chars().all(|c| c == '0' || c == '1') {
-        return Err("Binary string must contain only '0' and '1'".into());
-    }
-    
-    // Parse the binary string in chunks to avoid overflow
-    let mut result: u64 = 0;
-    for c in binary_str.chars() {
-        result = (result << 1) | (c as u64 - '0' as u64);
-    }
-    
-    Ok(result)
+
+    u64::from_str_radix(binary_str, 2).map_err(|e| format!("Invalid binary string: {}", e).into())
 }
 
 pub struct VideoHashIndex {
@@ -38,7 +27,11 @@ impl VideoHashIndex {
         }
     }
 
-    pub fn add(&self, video_id: String, hash: &VideoHash) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub fn add(
+        &self,
+        video_id: String,
+        hash: &VideoHash,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let hash_value = binary_string_to_u64(&hash.hash)?;
 
         let mut hashes = self.hashes.write().unwrap();
@@ -62,12 +55,16 @@ impl VideoHashIndex {
             }
 
             // Create ordered vectors of video_ids and hash values to ensure consistent ordering
-            let mut video_id_hash_pairs: Vec<(String, u64)> = hashes.iter()
+            let mut video_id_hash_pairs: Vec<(String, u64)> = hashes
+                .iter()
                 .map(|(video_id, &hash)| (video_id.clone(), hash))
                 .collect();
-            
+
             // Split into separate vectors
-            let video_ids: Vec<String> = video_id_hash_pairs.iter().map(|(id, _)| id.clone()).collect();
+            let video_ids: Vec<String> = video_id_hash_pairs
+                .iter()
+                .map(|(id, _)| id.clone())
+                .collect();
             let codes: Vec<u64> = video_id_hash_pairs.iter().map(|(_, code)| *code).collect();
 
             // Create the index with explicit number of blocks (8 for 64-bit hashes)
@@ -75,7 +72,7 @@ impl VideoHashIndex {
             match mih_rs::Index::with_blocks(codes, 8) {
                 Ok(new_index) => {
                     *index_lock = Some((new_index, video_ids));
-                },
+                }
                 Err(e) => {
                     return Err(format!("Failed to create MIH index: {}", e).into());
                 }
@@ -99,7 +96,7 @@ impl VideoHashIndex {
         }
 
         let (index, video_ids) = index_lock.as_ref().unwrap();
-        
+
         let mut searcher = index.topk_searcher();
         let answers = searcher.run(hash_value, 1);
 
@@ -237,7 +234,7 @@ mod tests {
 
         Ok(())
     }
-    
+
     #[test]
     fn test_consistent_ordering() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let index = VideoHashIndex::new();
@@ -246,10 +243,16 @@ mod tests {
         let video_id1 = "video-001".to_string();
         let video_id2 = "video-002".to_string();
         let video_id3 = "video-003".to_string();
-        
-        let hash1 = VideoHash { hash: "0".repeat(64) };
-        let hash2 = VideoHash { hash: "1".repeat(64) };
-        let hash3 = VideoHash { hash: "0".repeat(32) + &"1".repeat(32) };
+
+        let hash1 = VideoHash {
+            hash: "0".repeat(64),
+        };
+        let hash2 = VideoHash {
+            hash: "1".repeat(64),
+        };
+        let hash3 = VideoHash {
+            hash: "0".repeat(32) + &"1".repeat(32),
+        };
 
         // Add in non-sequential order
         index.add(video_id2.clone(), &hash2)?;
@@ -262,7 +265,7 @@ mod tests {
         let (found_id, distance) = result.unwrap();
         assert_eq!(found_id, video_id1);
         assert_eq!(distance, 0);
-        
+
         // Test once more to ensure the order is consistent
         let result = index.find_nearest_neighbor(&hash1)?;
         assert!(result.is_some());
