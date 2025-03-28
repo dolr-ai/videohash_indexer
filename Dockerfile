@@ -1,12 +1,16 @@
-# Build stage
 FROM rust:slim-bullseye as builder
 
 WORKDIR /app
 COPY . .
 
 RUN apt-get update && \
-    apt-get install -y pkg-config libssl-dev && \
-    cargo build --release
+    apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    make \
+    gcc \
+    libc6-dev \
+    && cargo build --release
 
 FROM debian:bullseye-slim
 
