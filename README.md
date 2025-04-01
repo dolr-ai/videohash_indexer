@@ -143,7 +143,7 @@ A load testing script is included to benchmark the service:
 # On macOS: brew install wrk
 
 # Run the load test (12 threads, 400 connections, 30 seconds)
-wrk -t12 -c400 -d30s -s src/search_test.lua http://localhost:8080/search
+wrk -t12 -c400 -d30s -s search_test.lua http://localhost:8080/search
 ```
 
 ## Implementation Details
