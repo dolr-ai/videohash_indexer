@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::{Arc, RwLock};
 
+use crate::bigquery;
 use mih_rs::Index;
 
 use super::videohash::VideoHash;
@@ -171,6 +172,34 @@ impl VideoHashIndex {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub async fn rebuild_from_bigquery(&self) -> Result<usize, Box<dyn Error + Send + Sync>> {
+        log::info!("Starting index rebuild from BigQuery...");
+        let video_hashes = bigquery::fetch_video_hashes().await?;
+
+        {
+            let mut hashes = self.hashes.write().unwrap();
+            hashes.clear();
+
+            for (video_id, hash) in video_hashes.iter() {
+                let hash_value = binary_string_to_u64(&hash.hash)?;
+                hashes.insert(video_id.clone(), hash_value);
+            }
+
+            let mut index = self.index.write().unwrap();
+            *index = None;
+        }
+
+        self.ensure_index_built()?;
+
+        let count = self.len();
+        log::info!("Rebuilt index with {} hashes from BigQuery", count);
+        Ok(count)
+    }
+
+    pub fn needs_rebuild(&self) -> bool {
+        self.is_empty()
     }
 }
 
