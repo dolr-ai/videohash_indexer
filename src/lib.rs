@@ -1,6 +1,6 @@
+pub mod bigquery;
 pub mod index;
 pub mod videohash;
-
 pub use index::{create_shared_index, VideoHashIndex};
 pub use videohash::VideoHash;
 

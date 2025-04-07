@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::sync::Arc;
 
+mod bigquery;
 mod index;
 mod videohash;
 
@@ -115,10 +116,31 @@ async fn delete_hash(
     }
 }
 
+async fn rebuild_index(index: web::Data<Arc<VideoHashIndex>>) -> impl Responder {
+    match index.rebuild_from_bigquery().await {
+        Ok(count) => HttpResponse::Ok().json(serde_json::json!({
+            "success": true,
+            "message": format!("Index rebuilt successfully with {} video hashes", count)
+        })),
+        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to rebuild index: {}", e),
+        }),
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    dotenv::dotenv().ok();
     env_logger::init_from_env(Env::default().default_filter_or("info"));
+
     let shared_index = create_shared_index();
+
+    if shared_index.needs_rebuild() {
+        match shared_index.rebuild_from_bigquery().await {
+            Ok(count) => println!("Successfully initialized index with {} video hashes", count),
+            Err(e) => println!("Warning: Could not initialize index from BigQuery: {}", e),
+        }
+    }
 
     println!("Starting videohash indexer service on http://0.0.0.0:8080");
 
@@ -128,6 +150,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(shared_index.clone()))
             .route("/search", web::post().to(search))
             .route("/hash/{video_id}", web::delete().to(delete_hash))
+            .route("/rebuild", web::post().to(rebuild_index))
     })
     .bind("0.0.0.0:8080")?
     .run()
