@@ -20,7 +20,9 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
       
       - name: Deploy to Fly.io
-        run: flyctl deploy --remote-only
+        run: |
+          flyctl deploy --remote-only
+          flyctl secrets set "GOOGLE_SA_KEY=$GOOGLE_SA_KEY"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           GOOGLE_SA_KEY: ${{ secrets.GOOGLE_SA_KEY }}
