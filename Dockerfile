@@ -21,6 +21,8 @@ RUN apt-get update && \
 
 COPY --from=builder /app/target/release/videohash_indexer .
 ENV RUST_LOG=info
+ENV GOOGLE_CLOUD_PROJECT='hot-or-not-feed-intelligence'
+
 EXPOSE 8080
 
 CMD ["./videohash_indexer"]
