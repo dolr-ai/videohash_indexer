@@ -32,6 +32,13 @@ pub async fn fetch_video_hashes() -> Result<Vec<(String, VideoHash)>, Box<dyn Er
         .await
         .map_err(|e| format!("Failed to execute BigQuery query: {}", e))?;
 
+    let row_count = query_response.rows.as_ref().map_or(0, |rows| rows.len());
+
+    log::info!(
+        "BigQuery response: query successful, returned {} rows",
+        row_count
+    );
+
     let mut results = Vec::new();
 
     if let Some(rows) = query_response.rows {
