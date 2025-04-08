@@ -14,7 +14,7 @@ pub async fn fetch_video_hashes() -> Result<Vec<(String, VideoHash)>, Box<dyn Er
 
     let query_sql = r#"
         SELECT video_id, videohash 
-        FROM 'hot-or-not-feed-intelligence.yral_ds.video_unique'
+        FROM `hot-or-not-feed-intelligence.yral_ds.video_unique`
         ORDER BY created_at DESC
     "#;
 
