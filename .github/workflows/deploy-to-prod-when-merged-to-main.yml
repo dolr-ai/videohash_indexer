@@ -21,8 +21,9 @@ jobs:
       
       - name: Deploy to Fly.io
         run: |
+          flyctl secrets set "GOOGLE_SA_KEY=$GOOGLE_SA_KEY" --app "video-hash-indexer" --stage
+          flyctl secrets set "GOOGLE_CLOUD_PROJECT=hot-or-not-feed-intelligence" --app "video-hash-indexer" --stage
           flyctl deploy --remote-only
-          flyctl secrets set "GOOGLE_SA_KEY=$GOOGLE_SA_KEY"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           GOOGLE_SA_KEY: ${{ secrets.GOOGLE_SA_KEY }}
