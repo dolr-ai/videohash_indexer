@@ -13,7 +13,7 @@ processes = ["app"]
 
 [[vm]]
 size = "shared-cpu-2x"
-memory = "2gb"
+memory = "8gb"
 
 [env]
   GOOGLE_CLOUD_PROJECT = "hot-or-not-feed-intelligence"
