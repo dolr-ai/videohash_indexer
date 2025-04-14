@@ -1,5 +1,7 @@
 app = "videohash-indexer"
-primary_region = "sin"
+primary_region = 'sin'
+kill_signal = 'SIGINT'
+kill_timeout = '5s'
 
 [build]
 
@@ -11,9 +13,14 @@ auto_start_machines = true
 min_machines_running = 1
 processes = ["app"]
 
+[services.concurrency]
+hard_limit = 10000
+soft_limit = 500
+
 [[vm]]
-size = "shared-cpu-2x"
-memory = "8gb"
+memory = '8gb'
+cpu_kind = 'shared'
+cpus = 8
 
 [env]
   GOOGLE_CLOUD_PROJECT = "hot-or-not-feed-intelligence"
