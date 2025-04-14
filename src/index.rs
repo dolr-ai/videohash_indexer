@@ -35,12 +35,11 @@ impl VideoHashIndex {
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let hash_value = binary_string_to_u64(&hash.hash)?;
 
-        let mut hashes = self.hashes.write().unwrap();
-        hashes.insert(video_id, hash_value);
-
-        // Invalidate the index when the hash map changes
         let mut index = self.index.write().unwrap();
         *index = None;
+
+        let mut hashes = self.hashes.write().unwrap();
+        hashes.insert(video_id, hash_value);
 
         Ok(())
     }
