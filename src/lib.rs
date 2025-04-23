@@ -37,7 +37,7 @@ pub async fn search(
     req: web::Json<SearchRequest>,
     index: web::Data<Arc<VideoHashIndex>>,
 ) -> HttpResponse {
-    const MAX_HAMMING_DISTANCE: u32 = 10;
+    const MAX_HAMMING_DISTANCE: u32 = 1;
 
     let query_hash = match VideoHash::from_binary_string(&req.hash) {
         Ok(hash) => hash,
