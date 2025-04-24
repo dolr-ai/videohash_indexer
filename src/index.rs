@@ -44,6 +44,21 @@ impl VideoHashIndex {
         Ok(())
     }
 
+    pub fn has_exact_match(
+        &self,
+        video_id: &str,
+        hash: &VideoHash,
+    ) -> Result<bool, Box<dyn Error + Send + Sync>> {
+        let hash_value = binary_string_to_u64(&hash.hash)?;
+
+        let hashes = self.hashes.read().unwrap();
+        if let Some(&existing_hash) = hashes.get(video_id) {
+            return Ok(existing_hash == hash_value);
+        }
+
+        Ok(false)
+    }
+
     fn ensure_index_built(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut index_lock = self.index.write().unwrap();
 

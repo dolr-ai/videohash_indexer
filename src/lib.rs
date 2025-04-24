@@ -48,6 +48,24 @@ pub async fn search(
         }
     };
 
+    let has_exact_match = match index.has_exact_match(&req.video_id, &query_hash) {
+        Ok(exists) => exists,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to check for exact match: {}", e),
+            });
+        }
+    };
+
+    if has_exact_match {
+        return HttpResponse::Ok().json(SearchResponse {
+            match_found: false,
+            match_details: None,
+            hash_added: false,
+        });
+    }
+
+    // Continue with the existing similarity search logic
     let similar_hashes = match index.find_within_distance(&query_hash, MAX_HAMMING_DISTANCE) {
         Ok(results) => results,
         Err(e) => {
