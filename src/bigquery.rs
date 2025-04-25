@@ -11,64 +11,81 @@ use crate::videohash::VideoHash;
 pub async fn fetch_video_hashes() -> Result<Vec<(String, VideoHash)>, Box<dyn Error + Send + Sync>>
 {
     let (client, project_id) = create_bigquery_client().await?;
-
-    let query_sql = r#"
-        SELECT video_id, videohash 
-        FROM `hot-or-not-feed-intelligence.yral_ds.video_unique`
-        ORDER BY created_at DESC
-    "#;
-
-    log::info!("Executing BigQuery query to fetch video hashes");
-
-    let request = QueryRequest {
-        query: query_sql.to_string(),
-        use_legacy_sql: false,
-        ..Default::default()
-    };
-
-    let query_response = client
-        .job()
-        .query(&project_id, &request)
-        .await
-        .map_err(|e| format!("Failed to execute BigQuery query: {}", e))?;
-
-    let row_count = query_response.rows.as_ref().map_or(0, |rows| rows.len());
-
-    log::info!(
-        "BigQuery response: query successful, returned {} rows",
-        row_count
-    );
-
     let mut results = Vec::new();
+    let batch_size = 50000;
+    let mut offset = 0;
+    
+    loop {
+        let query_sql = format!(r#"
+            SELECT video_id, videohash 
+            FROM `hot-or-not-feed-intelligence.yral_ds.video_unique`
+            ORDER BY created_at DESC
+            LIMIT {batch_size} OFFSET {offset}
+        "#);
 
-    if let Some(rows) = query_response.rows {
-        for row in rows {
-            let f = &row.f;
+        log::info!("Executing BigQuery query to fetch video hashes (batch: {}, offset: {})", batch_size, offset);
 
-            if f.len() >= 2 {
-                let video_id = match extract_string_from_value(&f[0].v) {
-                    Some(id) => id,
-                    None => continue,
-                };
+        let request = QueryRequest {
+            query: query_sql,
+            use_legacy_sql: false,
+            ..Default::default()
+        };
 
-                let hash_string = match extract_string_from_value(&f[1].v) {
-                    Some(hash) => hash,
-                    None => continue,
-                };
+        let query_response = client
+            .job()
+            .query(&project_id, &request)
+            .await
+            .map_err(|e| format!("Failed to execute BigQuery query: {}", e))?;
 
-                match VideoHash::from_binary_string(&hash_string) {
-                    Ok(hash) => {
-                        results.push((video_id, hash));
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to parse hash for video_id {}: {}", video_id, e);
+        let row_count = query_response.rows.as_ref().map_or(0, |rows| rows.len());
+        log::info!("BigQuery response: query successful, returned {} rows", row_count);
+
+        // Process rows
+        if let Some(rows) = query_response.rows {
+            if rows.is_empty() {
+                // No more results to fetch
+                break;
+            }
+            
+            for row in rows {
+                let f = &row.f;
+
+                if f.len() >= 2 {
+                    let video_id = match extract_string_from_value(&f[0].v) {
+                        Some(id) => id,
+                        None => continue,
+                    };
+
+                    let hash_string = match extract_string_from_value(&f[1].v) {
+                        Some(hash) => hash,
+                        None => continue,
+                    };
+
+                    match VideoHash::from_binary_string(&hash_string) {
+                        Ok(hash) => {
+                            results.push((video_id, hash));
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to parse hash for video_id {}: {}", video_id, e);
+                        }
                     }
                 }
             }
+            
+            // Increase offset for next batch
+            offset += row_count;
+            
+            // If we got fewer rows than requested, we've reached the end
+            if row_count < batch_size {
+                break;
+            }
+        } else {
+            // No rows returned
+            break;
         }
     }
 
-    log::info!("Loaded {} video hashes from BigQuery", results.len());
+    log::info!("Loaded {} video hashes from BigQuery in total", results.len());
     Ok(results)
 }
 
